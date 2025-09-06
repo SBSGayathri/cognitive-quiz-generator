@@ -1,0 +1,3 @@
+Supervised learning trains models on labeled data.
+Unsupervised learning finds structure in unlabeled data.
+Neural networks are powerful function approximators used heavily in deep learning.
