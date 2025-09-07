@@ -1,9 +1,24 @@
 import re
 import random
+import nltk
 from nltk.tokenize import sent_tokenize
 from sklearn.feature_extraction.text import TfidfVectorizer
 import docx2txt
 import PyPDF2
+
+# -------------------- FIX FOR NLTK punkt --------------------
+# Ensure punkt is downloaded
+try:
+    nltk.data.find("tokenizers/punkt")
+except LookupError:
+    nltk.download("punkt")
+
+# Ensure punkt_tab is also available (needed in new NLTK versions)
+try:
+    nltk.data.find("tokenizers/punkt_tab/english.pickle")
+except LookupError:
+    nltk.download("punkt_tab")
+# ------------------------------------------------------------
 
 def load_text_from_txt(file_path):
     with open(file_path, "r", encoding="utf-8") as f:
