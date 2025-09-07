@@ -1,159 +1,117 @@
 import re
 import random
-from nltk.tokenize import sent_tokenize
-from sklearn.feature_extraction.text import TfidfVectorizer
+import nltk
 import docx2txt
 import PyPDF2
-import nltk
+from nltk.tokenize import sent_tokenize
+from sklearn.feature_extraction.text import TfidfVectorizer
 
-# Ensure punkt is available
-nltk.download("punkt")
+# -------------------- NLTK SETUP --------------------
+try:
+    nltk.data.find("tokenizers/punkt")
+except LookupError:
+    nltk.download("punkt", quiet=True)
 
+# -------------------- FILE READER --------------------
+def read_file(file_path):
+    """Read text, Word, or PDF file content as plain text."""
+    if file_path.endswith(".txt"):
+        with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+            return f.read()
 
-def load_text_from_txt(file_path):
-    with open(file_path, "r", encoding="utf-8") as f:
-        return f.read()
+    elif file_path.endswith(".docx"):
+        return docx2txt.process(file_path)
 
+    elif file_path.endswith(".pdf"):
+        text = ""
+        with open(file_path, "rb") as f:
+            pdf_reader = PyPDF2.PdfReader(f)
+            for page in pdf_reader.pages:
+                text += page.extract_text() or ""
+        return text
 
-def load_text_from_docx(file_path):
-    return docx2txt.process(file_path)
+    else:
+        raise ValueError("Unsupported file format. Use .txt, .docx, or .pdf")
 
-
-def load_text_from_pdf(file_path):
-    pdf_reader = PyPDF2.PdfReader(file_path)
-    text = ""
-    for page in pdf_reader.pages:
-        page_text = page.extract_text()
-        if page_text:
-            text += page_text + " "
+# -------------------- SANITIZER --------------------
+def sanitize_text(text):
+    replacements = {
+        "’": "'",
+        "‘": "'",
+        "—": "-",
+        "…": "...",
+    }
+    for k, v in replacements.items():
+        text = text.replace(k, v)
     return text
 
+# -------------------- KEYWORD EXTRACTION --------------------
+def extract_keywords(text, num_keywords=50):
+    sentences = sent_tokenize(text)
+    vectorizer = TfidfVectorizer(stop_words="english")
+    X = vectorizer.fit_transform(sentences)
+    indices = X.sum(axis=0).A1.argsort()[::-1]
+    keywords = [vectorizer.get_feature_names_out()[i] for i in indices]
+    return keywords[:num_keywords]
 
-def preprocess_sentences(text):
-    sents = sent_tokenize(text)
-    random.shuffle(sents)
-    return [s.strip() for s in sents if 25 < len(s.strip()) < 200]
+# -------------------- CLOZE GENERATOR --------------------
+def generate_cloze_questions(text, num_questions=5):
+    sentences = sent_tokenize(text)
+    cloze_questions = []
 
-
-def extract_keywords(text, top_n=30):
-    vec = TfidfVectorizer(ngram_range=(1, 2), stop_words="english", max_features=200)
-    tfidf = vec.fit_transform([text])
-    feature_names = vec.get_feature_names_out()
-    scores = tfidf.toarray().flatten()
-    idx = scores.argsort()[::-1]
-    keywords = [feature_names[i] for i in idx if len(feature_names[i]) > 2]
-    random.shuffle(keywords)
-    return keywords[:top_n]
-
-
-def make_cloze(sentence, keyword):
-    """Replace keyword in sentence with blank for cloze question."""
-    pat = re.compile(r"\b" + re.escape(keyword) + r"\b", flags=re.I)
-    if pat.search(sentence):
-        return pat.sub("_____", sentence, count=1)
-    return None
-
-
-def generate_mcq(sentence, keyword, keywords_pool, num_options=4):
-    """
-    Generate meaningful MCQ with proper question wording.
-    Fills the keyword as a blank in the sentence.
-    """
-    masked_sentence = re.sub(rf"\b{re.escape(keyword)}\b", "_____", sentence, flags=re.I)
-    question = f"Fill in the blank: {masked_sentence}"
-
-    distractors = [kw for kw in keywords_pool if kw.lower() != keyword.lower() and len(kw) > 2]
-    random.shuffle(distractors)
-    options = distractors[:num_options - 1] + [keyword]
-    random.shuffle(options)
-
-    return {"question": question, "answer": keyword, "options": options}
-
-
-def generate_quiz(file_path, num_questions=5):
-    ext = file_path.split(".")[-1].lower()
-    if ext == "txt":
-        text = load_text_from_txt(file_path)
-    elif ext == "docx":
-        text = load_text_from_docx(file_path)
-    elif ext == "pdf":
-        text = load_text_from_pdf(file_path)
-    else:
-        return {"cloze": [], "mcq": []}
-
-    sentences = preprocess_sentences(text)
-    keywords = extract_keywords(text, top_n=num_questions * 5)  # extra keywords for variety
-
-    quiz = {"cloze": [], "mcq": []}
-    used_sentences = set()
-
-    # ----------------- Cloze Questions -----------------
-    for kw in keywords:
-        random.shuffle(sentences)
-        for s in sentences:
-            if kw.lower() in s.lower() and s not in used_sentences:
-                cloze = make_cloze(s, kw)
-                if cloze:
-                    quiz["cloze"].append({"question": cloze, "answer": kw})
-                    used_sentences.add(s)
-                    break
-        if len(quiz["cloze"]) >= num_questions:
+    for s in sentences:
+        s = sanitize_text(s)
+        if len(s.split()) < 4:  # skip too short sentences
+            continue
+        words = s.split()
+        keyword = random.choice(words)
+        if keyword.isalpha() and len(keyword) > 3:
+            question = s.replace(keyword, "_____")
+            cloze_questions.append({"question": question, "answer": keyword})
+        if len(cloze_questions) >= num_questions:
             break
 
-    # ----------------- MCQs - FIXED VERSION -----------------
-    mcq_generated = 0
-    used_mcq_sentences = set()
-    used_mcq_keywords = set()
+    return cloze_questions
+
+# -------------------- MCQ GENERATOR --------------------
+def generate_mcq_questions(text, num_questions=5):
+    sentences = sent_tokenize(text)
+    keywords = extract_keywords(text, num_keywords=50)
+    mcq_questions = []
     attempts = 0
-    max_attempts = len(keywords) * len(sentences)  # Prevent infinite loop
-    
-    while mcq_generated < num_questions and attempts < max_attempts:
+    max_attempts = num_questions * 3
+
+    while len(mcq_questions) < num_questions and attempts < max_attempts:
+        s = random.choice(sentences)
+        s = sanitize_text(s)
+        words = s.split()
+        candidates = [w for w in words if w.isalpha() and w.lower() in keywords]
+        if candidates:
+            answer = random.choice(candidates)
+            question = s.replace(answer, "_____")
+            distractors = random.sample(
+                [w for w in keywords if w.lower() != answer.lower()],
+                min(3, len(keywords) - 1),
+            )
+            options = distractors + [answer]
+            random.shuffle(options)
+            mcq_questions.append({"question": question, "options": options, "answer": answer})
         attempts += 1
-        kw = random.choice(keywords)
-        
-        # Skip if we've already used this keyword for MCQ
-        if kw in used_mcq_keywords:
-            continue
-            
-        # Find sentences containing this keyword that haven't been used for MCQ
-        available_sentences = [s for s in sentences 
-                             if kw.lower() in s.lower() 
-                             and s not in used_mcq_sentences]
-        
-        if not available_sentences:
-            continue
-            
-        s = random.choice(available_sentences)
-        
-        # Generate MCQ
-        mcq_question = generate_mcq(s, kw, keywords)
-        
-        # Ensure we have enough options
-        if len(mcq_question["options"]) >= 2:  # At least correct answer + 1 distractor
-            quiz["mcq"].append(mcq_question)
-            used_mcq_sentences.add(s)
-            used_mcq_keywords.add(kw)
-            mcq_generated += 1
 
-    # If we still don't have enough MCQs, try with relaxed constraints
-    if len(quiz["mcq"]) < num_questions:
-        remaining_needed = num_questions - len(quiz["mcq"])
-        
-        # Reset used keywords but keep used sentences
-        for kw in keywords:
-            if kw not in used_mcq_keywords and remaining_needed > 0:
-                available_sentences = [s for s in sentences 
-                                     if kw.lower() in s.lower() 
-                                     and s not in used_mcq_sentences]
-                
-                if available_sentences:
-                    s = random.choice(available_sentences)
-                    mcq_question = generate_mcq(s, kw, keywords)
-                    
-                    if len(mcq_question["options"]) >= 2:
-                        quiz["mcq"].append(mcq_question)
-                        used_mcq_sentences.add(s)
-                        used_mcq_keywords.add(kw)
-                        remaining_needed -= 1
+    return mcq_questions
 
-    return quiz
+# -------------------- MAIN GENERATOR --------------------
+def generate_questions(file_path, num_questions=5):
+    text = read_file(file_path)
+    cloze = generate_cloze_questions(text, num_questions)
+    mcq = generate_mcq_questions(text, num_questions)
+    return cloze, mcq
+
+# -------------------- EXPORTABLE FUNCTION --------------------
+def generate_quiz(file_path, num_questions=5):
+    """Generate both Cloze and MCQ quiz from the given file."""
+    cloze_questions, mcq_questions = generate_questions(file_path, num_questions)
+    return {
+        "cloze": cloze_questions,
+        "mcq": mcq_questions
+    }
