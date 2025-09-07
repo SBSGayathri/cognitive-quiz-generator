@@ -3,3 +3,4 @@ fpdf
 python-docx
 nltk
 PyPDF2
+scikit-learn
