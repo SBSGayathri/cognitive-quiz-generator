@@ -10,6 +10,12 @@ import nltk
 # Ensure punkt is available on Streamlit Cloud
 nltk.download("punkt", quiet=True)
 nltk.download("punkt_tab", quiet=True)
+import nltk
+from nltk.tokenize import sent_tokenize
+
+# Ensure both resources are available on Streamlit Cloud
+nltk.download("punkt", quiet=True)
+nltk.download("punkt_tab", quiet=True)
 
 # -------------------- NLTK SETUP --------------------
 try:
