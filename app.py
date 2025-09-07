@@ -149,7 +149,7 @@ if st.session_state.quiz and st.button("Submit Quiz"):
 
     st.success(f"✅ You scored {correct} out of {total}")
 
-    st.write("### Review")
+    st.write("### Review ###")
     idx = 1
     for k, v in relevant.items():
         user_ans = v["user"] or "(no answer)"
