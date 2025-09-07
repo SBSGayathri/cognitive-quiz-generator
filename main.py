@@ -6,16 +6,19 @@ import docx2txt
 import PyPDF2
 import nltk
 
-# Ensure punkt and punkt_tab are available
+# Ensure punkt is available
 nltk.download("punkt")
-nltk.download("punkt_tab")
+nltk.download("punkt_tab")  # ✅ added fallback for Streamlit cloud issue
+
 
 def load_text_from_txt(file_path):
     with open(file_path, "r", encoding="utf-8") as f:
         return f.read()
 
+
 def load_text_from_docx(file_path):
     return docx2txt.process(file_path)
+
 
 def load_text_from_pdf(file_path):
     pdf_reader = PyPDF2.PdfReader(file_path)
@@ -26,13 +29,15 @@ def load_text_from_pdf(file_path):
             text += page_text + " "
     return text
 
+
 def preprocess_sentences(text):
     sents = sent_tokenize(text)
     random.shuffle(sents)
     return [s.strip() for s in sents if 25 < len(s.strip()) < 200]
 
+
 def extract_keywords(text, top_n=30):
-    vec = TfidfVectorizer(ngram_range=(1,2), stop_words="english", max_features=200)
+    vec = TfidfVectorizer(ngram_range=(1, 2), stop_words="english", max_features=200)
     tfidf = vec.fit_transform([text])
     feature_names = vec.get_feature_names_out()
     scores = tfidf.toarray().flatten()
@@ -41,19 +46,31 @@ def extract_keywords(text, top_n=30):
     random.shuffle(keywords)
     return keywords[:top_n]
 
+
 def make_cloze(sentence, keyword):
+    """Replace keyword in sentence with blank for cloze question."""
     pat = re.compile(r"\b" + re.escape(keyword) + r"\b", flags=re.I)
     if pat.search(sentence):
         return pat.sub("_____", sentence, count=1)
     return None
 
+
 def generate_mcq(sentence, keyword, keywords_pool, num_options=4):
-    question = f"In the context: '{sentence}', what does '{keyword}' refer to?"
+    """
+    Generate meaningful MCQ.
+    Instead of repeating keyword, mask it in the sentence and ask as a blank-fill question.
+    """
+    masked_sentence = re.sub(rf"\b{re.escape(keyword)}\b", "_____", sentence, flags=re.I)
+    question = f"Fill in the blank: {masked_sentence}"
+
     distractors = [kw for kw in keywords_pool if kw.lower() != keyword.lower() and len(kw) > 2]
     random.shuffle(distractors)
-    options = distractors[:num_options-1] + [keyword]
+
+    options = distractors[:num_options - 1] + [keyword]
     random.shuffle(options)
+
     return {"question": question, "answer": keyword, "options": options}
+
 
 def generate_quiz(file_path, num_questions=5):
     ext = file_path.split(".")[-1].lower()
@@ -67,12 +84,13 @@ def generate_quiz(file_path, num_questions=5):
         return {"cloze": [], "mcq": []}
 
     sentences = preprocess_sentences(text)
-    keywords = extract_keywords(text, top_n=num_questions*3)
+    keywords = extract_keywords(text, top_n=num_questions * 3)
 
     quiz = {"cloze": [], "mcq": []}
 
-    # Cloze questions
     used_sentences = set()
+
+    # Cloze Questions
     for kw in keywords:
         random.shuffle(sentences)
         for s in sentences:
@@ -80,16 +98,19 @@ def generate_quiz(file_path, num_questions=5):
                 cloze = make_cloze(s, kw)
                 if cloze:
                     quiz["cloze"].append({"question": cloze, "answer": kw})
-                    used_sentences.add(s)
+                    used_sentences.add(s)  # mark sentence as used
                     break
         if len(quiz["cloze"]) >= num_questions:
             break
 
-    # MCQs
+    # MCQs (ensure different sentences than Cloze)
     for kw in keywords:
         random.shuffle(sentences)
-        s = next((s for s in sentences if kw.lower() in s.lower()), sentences[0])
-        quiz["mcq"].append(generate_mcq(s, kw, keywords))
+        for s in sentences:
+            if kw.lower() in s.lower() and s not in used_sentences:
+                quiz["mcq"].append(generate_mcq(s, kw, keywords))
+                used_sentences.add(s)
+                break
         if len(quiz["mcq"]) >= num_questions:
             break
 
