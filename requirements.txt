@@ -1,6 +1,7 @@
 streamlit
 fpdf
 python-docx
+docx2txt
 nltk
 PyPDF2
 scikit-learn
