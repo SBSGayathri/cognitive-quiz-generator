@@ -1,0 +1,5 @@
+streamlit
+fpdf
+python-docx
+nltk
+PyPDF2
