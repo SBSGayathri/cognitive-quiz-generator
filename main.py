@@ -5,6 +5,11 @@ import docx2txt
 import PyPDF2
 from nltk.tokenize import sent_tokenize
 from sklearn.feature_extraction.text import TfidfVectorizer
+import nltk
+
+# Ensure punkt is available on Streamlit Cloud
+nltk.download("punkt", quiet=True)
+nltk.download("punkt_tab", quiet=True)
 
 # -------------------- NLTK SETUP --------------------
 try:
