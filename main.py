@@ -1,24 +1,14 @@
 import re
 import random
-import nltk
 from nltk.tokenize import sent_tokenize
 from sklearn.feature_extraction.text import TfidfVectorizer
 import docx2txt
 import PyPDF2
+import nltk
 
-# -------------------- FIX FOR NLTK punkt --------------------
-# Ensure punkt is downloaded
-try:
-    nltk.data.find("tokenizers/punkt")
-except LookupError:
-    nltk.download("punkt")
-
-# Ensure punkt_tab is also available (needed in new NLTK versions)
-try:
-    nltk.data.find("tokenizers/punkt_tab/english.pickle")
-except LookupError:
-    nltk.download("punkt_tab")
-# ------------------------------------------------------------
+# Ensure punkt and punkt_tab are available
+nltk.download("punkt")
+nltk.download("punkt_tab")
 
 def load_text_from_txt(file_path):
     with open(file_path, "r", encoding="utf-8") as f:
@@ -38,7 +28,6 @@ def load_text_from_pdf(file_path):
 
 def preprocess_sentences(text):
     sents = sent_tokenize(text)
-    # shuffle sentences for variability
     random.shuffle(sents)
     return [s.strip() for s in sents if 25 < len(s.strip()) < 200]
 
@@ -49,7 +38,7 @@ def extract_keywords(text, top_n=30):
     scores = tfidf.toarray().flatten()
     idx = scores.argsort()[::-1]
     keywords = [feature_names[i] for i in idx if len(feature_names[i]) > 2]
-    random.shuffle(keywords)  # shuffle keywords for variability
+    random.shuffle(keywords)
     return keywords[:top_n]
 
 def make_cloze(sentence, keyword):
@@ -82,7 +71,7 @@ def generate_quiz(file_path, num_questions=5):
 
     quiz = {"cloze": [], "mcq": []}
 
-    # Generate Cloze questions
+    # Cloze questions
     used_sentences = set()
     for kw in keywords:
         random.shuffle(sentences)
@@ -96,7 +85,7 @@ def generate_quiz(file_path, num_questions=5):
         if len(quiz["cloze"]) >= num_questions:
             break
 
-    # Generate MCQs
+    # MCQs
     for kw in keywords:
         random.shuffle(sentences)
         s = next((s for s in sentences if kw.lower() in s.lower()), sentences[0])
